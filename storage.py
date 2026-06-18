@@ -27,7 +27,7 @@ class BaseStorage(ABC):
         pass
 
     @abstractmethod
-    def get_tours(self, q: str = "", page: int = 1)-> list[TourSavedSchema]:
+    def get_tours(self, q: str = "", page: int = 1) -> list[TourSavedSchema]:
         pass
 
 
