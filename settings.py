@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     MONGO_DB: str
     MONGO_COLLECTION: str
 
+    PAGE_SIZE: int = 3
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
