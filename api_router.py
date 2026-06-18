@@ -1,6 +1,5 @@
 from fastapi import APIRouter, status, Query
-from schemas import TourCreateSchema, TourSavedSchema
-from bson import ObjectId
+from schemas import TourCreateSchema, TourSavedSchema, TourPriceImageSchema
 
 from storage import storage
 
@@ -30,3 +29,22 @@ def get_tours(
     saved_tours = storage.get_tours(q, page=page)
 
     return saved_tours
+
+
+@api_router.delete("/{tour_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_tour(tour_id: str) -> None:
+    storage.delete_tour(tour_id)
+
+
+@api_router.patch("/{tour_id}")
+def patch_tour(tour_id: str, new_tour_data: TourPriceImageSchema) -> TourSavedSchema:
+    patched_tour = storage.update_tour(tour_id, new_tour_data)
+
+    return patched_tour
+
+
+@api_router.put("/{tour_id}")
+def put_tour(tour_id: str, tour: TourCreateSchema) -> TourSavedSchema:
+    put_tour_obj = storage.update_tour(tour_id, tour)
+
+    return put_tour_obj

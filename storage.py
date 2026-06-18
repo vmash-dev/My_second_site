@@ -4,12 +4,34 @@ from datetime import datetime
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
+from abc import ABC, abstractmethod
 
-from schemas import TourCreateSchema, TourSavedSchema
+from schemas import TourCreateSchema, TourSavedSchema, TourPriceImageSchema
 from settings import settings
 
+class BaseStorage(ABC):
+    @abstractmethod
+    def create_tour(self, book: TourCreateSchema) -> TourSavedSchema:
+        pass
 
-class MongoDBStorage:
+    @abstractmethod
+    def update_tour(self, tour_id: str, new_tour_data: TourPriceImageSchema | TourCreateSchema) -> TourSavedSchema:
+        pass
+
+    @abstractmethod
+    def get_tour(self, tour_id: str) -> TourSavedSchema:
+        pass
+
+    @abstractmethod
+    def delete_tour(self, tour_id: str) -> None:
+        pass
+
+    @abstractmethod
+    def get_tours(self, q: str = "", page: int = 1)-> list[TourSavedSchema]:
+        pass
+
+
+class MongoDBStorage(BaseStorage):
     def __init__(self):
         client = MongoClient(settings.MONGO_URI, server_api=ServerApi('1'))
         db = client[settings.MONGO_DB]
@@ -24,16 +46,31 @@ class MongoDBStorage:
 
         return saved_tour
 
-    def get_tour(self, tour_id: str) -> TourSavedSchema:
+    def update_tour(self, tour_id: str, new_tour_data: TourPriceImageSchema | TourCreateSchema) -> TourSavedSchema:
+        payload = {'$set': new_tour_data.model_dump()}
+        result = self.collection.update_one(self._get_object_id_query(tour_id), payload)
+        if not result.raw_result['n']:
+            raise HTTPException(
+                detail=f'Tour with id={tour_id} not found',
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        saved_tour = self.get_tour(tour_id)
+        return saved_tour
+
+    def _get_object_id_query(self, tour_id: str) -> dict[str, ObjectId]:
         try:
             query = {"_id": ObjectId(tour_id)}
+            return query
         except InvalidId:
             raise HTTPException(
-                detail=f"Invalid book id {tour_id}",
+                detail=f"Invalid tour id {tour_id}",
                 status_code=status.HTTP_400_BAD_REQUEST
             )
 
-        tour = self.collection.find_one(query)
+    def get_tour(self, tour_id: str) -> TourSavedSchema:
+        tour = self.collection.find_one(self._get_object_id_query(tour_id))
+
         if not tour:
             raise HTTPException(
                 detail=f'Tour with id={tour_id} not found',
@@ -44,12 +81,16 @@ class MongoDBStorage:
 
         return tour
 
+    def delete_tour(self, tour_id: str) -> None:
+        self.get_tour(tour_id)
+        self.collection.delete_one(self._get_object_id_query(tour_id))
+
     def transform_tour(self, tour: dict) -> TourSavedSchema:
         tour = TourSavedSchema(
-            title=tour['title'],
-            image=tour['image'],
+            tour_name=tour['tour_name'],
+            hotel_view=tour['hotel_view'],
             price=tour['price'],
-            author=tour['author'],
+            tour_description=tour['tour_description'],
             id=str(tour['_id']),
             created_at=tour['created_at'],
         )
@@ -83,4 +124,4 @@ class MongoDBStorage:
 
 
 
-storage = MongoDBStorage()
+storage: BaseStorage = MongoDBStorage()
