@@ -3,7 +3,7 @@ from api_router import api_router
 
 
 app = FastAPI(
-    title='final project'
+    title='Турагенство "Перелетный страус"'
 )
 
-app.include_router(api_router, tags=['BOOKS'])
+app.include_router(api_router, tags=['TOURS'])
