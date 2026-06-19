@@ -4,59 +4,100 @@ from datetime import datetime
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
+from abc import ABC, abstractmethod
 
-from schemas import BookCreateSchema, BookSavedSchema
+from schemas import TourCreateSchema, TourSavedSchema, TourPriceImageSchema
 from settings import settings
 
+class BaseStorage(ABC):
+    @abstractmethod
+    def create_tour(self, book: TourCreateSchema) -> TourSavedSchema:
+        pass
 
-class MongoDBStorage:
+    @abstractmethod
+    def update_tour(self, tour_id: str, new_tour_data: TourPriceImageSchema | TourCreateSchema) -> TourSavedSchema:
+        pass
+
+    @abstractmethod
+    def get_tour(self, tour_id: str) -> TourSavedSchema:
+        pass
+
+    @abstractmethod
+    def delete_tour(self, tour_id: str) -> None:
+        pass
+
+    @abstractmethod
+    def get_tours(self, q: str = "", page: int = 1) -> list[TourSavedSchema]:
+        pass
+
+
+class MongoDBStorage(BaseStorage):
     def __init__(self):
         client = MongoClient(settings.MONGO_URI, server_api=ServerApi('1'))
         db = client[settings.MONGO_DB]
         self.collection = db[settings.MONGO_COLLECTION]
 
-    def create_book(self, book: BookCreateSchema) -> BookSavedSchema:
-        book_dict = book.model_dump()
-        book_dict['created_at'] = datetime.now()
-        saved_book_in_db = self.collection.insert_one(book_dict)
+    def create_tour(self, tour: TourCreateSchema) -> TourSavedSchema:
+        tour_dict = tour.model_dump()
+        tour_dict['created_at'] = datetime.now()
+        saved_tour_in_db = self.collection.insert_one(tour_dict)
 
-        saved_book = self.get_book(saved_book_in_db.inserted_id)
+        saved_tour = self.get_tour(saved_tour_in_db.inserted_id)
 
-        return saved_book
+        return saved_tour
 
-    def get_book(self, book_id: str) -> BookSavedSchema:
-        try:
-            query = {"_id": ObjectId(book_id)}
-        except InvalidId:
+    def update_tour(self, tour_id: str, new_tour_data: TourPriceImageSchema | TourCreateSchema) -> TourSavedSchema:
+        payload = {'$set': new_tour_data.model_dump()}
+        result = self.collection.update_one(self._get_object_id_query(tour_id), payload)
+        if not result.raw_result['n']:
             raise HTTPException(
-                detail=f"Invalid book id {book_id}",
-                status_code=status.HTTP_400_BAD_REQUEST
-            )
-
-        book = self.collection.find_one(query)
-        if not book:
-            raise HTTPException(
-                detail=f'Book with id={book_id} not found',
+                detail=f'Tour with id={tour_id} not found',
                 status_code=status.HTTP_404_NOT_FOUND
             )
 
-        book = self.transform_book(book)
+        saved_tour = self.get_tour(tour_id)
+        return saved_tour
 
-        return book
+    def _get_object_id_query(self, tour_id: str) -> dict[str, ObjectId]:
+        try:
+            query = {"_id": ObjectId(tour_id)}
+            return query
+        except InvalidId:
+            raise HTTPException(
+                detail=f"Invalid tour id {tour_id}",
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
 
-    def transform_book(self, book: dict) -> BookSavedSchema:
-        book = BookSavedSchema(
-            title=book['title'],
-            image=book['image'],
-            price=book['price'],
-            author=book['author'],
-            id=str(book['_id']),
-            created_at=book['created_at'],
+    def get_tour(self, tour_id: str) -> TourSavedSchema:
+        tour = self.collection.find_one(self._get_object_id_query(tour_id))
+
+        if not tour:
+            raise HTTPException(
+                detail=f'Tour with id={tour_id} not found',
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        tour = self.transform_tour(tour)
+
+        return tour
+
+    def delete_tour(self, tour_id: str) -> None:
+        self.get_tour(tour_id)
+        self.collection.delete_one(self._get_object_id_query(tour_id))
+
+    def transform_tour(self, tour: dict) -> TourSavedSchema:
+        tour = TourSavedSchema(
+            tour_name=tour['tour_name'],
+            hotel_view=tour['hotel_view'],
+            price=tour['price'],
+            tour_description=tour['tour_description'],
+            id=str(tour['_id']),
+            created_at=tour['created_at'],
         )
-        return book
+        return tour
 
 
-    def get_books(self, q: str = "", page: int = 1)-> list[BookSavedSchema]:
+    def get_tours(self, q: str = "", page: int = 1)-> list[TourSavedSchema]:
         query = {}
         if q:
             query_words = q.split()
@@ -74,13 +115,13 @@ class MongoDBStorage:
                     "$and": query_words_dicts
                 }
         skip = (page - 1) *  settings.PAGE_SIZE
-        books = self.collection.find(query).limit(settings.PAGE_SIZE).skip(skip)
-        saved_books = []
-        for book in books:
-            saved_books.append(self.transform_book(book))
+        tours = self.collection.find(query).limit(settings.PAGE_SIZE).skip(skip)
+        saved_tours = []
+        for tour in tours:
+            saved_tours.append(self.transform_tour(tour))
 
-        return saved_books
+        return saved_tours
 
 
 
-storage = MongoDBStorage()
+storage: BaseStorage = MongoDBStorage()
